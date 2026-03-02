@@ -1,0 +1,32 @@
+import { Link } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
+import LogoIcon from '../../../src-tauri/icons/icon.png';
+
+/**
+ * Logo 组件 - 独立处理响应式
+ * 
+ * 响应式策略:
+ * 父容器宽度 >= 200px: Logo + 文字
+ * 父容器宽度 <  200px: 只有 Logo
+ */
+export function NavLogo() {
+    const { t } = useTranslation();
+
+    return (
+        <Link to="/" draggable="false" className="flex w-full min-w-0 items-center gap-2 text-xl font-semibold text-gray-900 dark:text-base-content">
+            <div className="relative flex items-center justify-center">
+                <img
+                    src={LogoIcon}
+                    alt="Logo"
+                    className="w-8 h-8 cursor-pointer active:scale-95 transition-transform relative z-10"
+                    draggable="false"
+                />
+            </div>
+
+            {/* 父容器宽度 < 200px 隐藏 */}
+            <span className="hidden @[100px]/logo:inline text-nowrap text-sm font-semibold text-base-content/80 tracking-tight">
+                {t('common.app_name', 'ZeroGravity Panel')}
+            </span>
+        </Link>
+    );
+}
