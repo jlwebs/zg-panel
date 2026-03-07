@@ -72,10 +72,19 @@ fn docker_logs(tail: Option<u32>) -> Result<String, String> {
 
 #[tauri::command]
 fn run_shell_command(command: &str) -> Result<String, String> {
-    let output = Command::new("sh")
-        .args(["-c", command])
+    let (prog, arg) = if cfg!(target_os = "windows") {
+        ("powershell", "-Command")
+    } else {
+        ("sh", "-c")
+    };
+
+
+    println!("Executing command: {} {} {}", prog, arg, command);
+
+    let output = std::process::Command::new(prog)
+        .args([arg, command])
         .output()
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| format!("Failed to spawn process: {}", e))?;
 
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
@@ -83,13 +92,22 @@ fn run_shell_command(command: &str) -> Result<String, String> {
     if output.status.success() {
         Ok(stdout)
     } else {
-        if stderr.is_empty() {
-            Err(format!("Command failed with exit code: {}", output.status))
+        let err_msg = if stderr.is_empty() {
+            format!("Command failed with exit code: {}. (No stderr output)", output.status)
         } else {
-            Err(stderr)
-        }
+            stderr
+        };
+        println!("Command error: {}", err_msg);
+        Err(err_msg)
     }
 }
+
+
+#[tauri::command]
+fn show_main_window(window: tauri::Window) {
+    window.show().unwrap();
+}
+
 
 #[tauri::command]
 fn read_file(path: String) -> Result<String, String> {
@@ -411,7 +429,8 @@ pub fn run() {
             device::open_device_folder,
             read_file,
             write_file,
-            init_proxy_files
+            init_proxy_files,
+            show_main_window
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -77,11 +77,12 @@ function Dashboard() {
     const fetchContainers = async () => {
         try {
             const res = await invoke<string>('run_shell_command', {
-                command: `docker ps --format '{{.ID}}\t{{.Names}}\t{{.Image}}\t{{.Ports}}' 2>&1`
+                command: 'docker ps --format "{{.ID}},{{.Names}},{{.Image}},{{.Ports}}"'
             });
+
             const lines = res.trim().split('\n').filter(l => l.trim());
             const parsed = lines.map(line => {
-                const [id, name, image, ports] = line.split('\t');
+                const [id, name, image, ports] = line.split(',');
                 const portStr = ports || '';
                 // Match: [host_ip:]host_port[-range]->container_port[-range]/proto
                 const pairRe = /(?:[^,\s]+:)?(\d+)(?:-\d+)?->(\d+)(?:-\d+)?\/(\w+)/g;
