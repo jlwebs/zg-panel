@@ -118,21 +118,36 @@ function Logs() {
             label: '🔑 ZG 账号',
             commands: [
                 { label: '提取Cookie', cmd: 'docker exec zerogravity zg extract --browser chrome 2>&1' },
-                { label: '账号列表', cmd: `curl -s http://127.0.0.1:${proxyPort}/v1/accounts | python -m json.tool` },
-                { label: '配额查询', cmd: `curl -s http://127.0.0.1:${proxyPort}/v1/quota | python -m json.tool` },
-                { label: '使用统计', cmd: `curl -s http://127.0.0.1:${proxyPort}/v1/usage | python -m json.tool` },
+                { label: '账号列表', cmd: `python -c "import urllib.request,json;r=urllib.request.urlopen('http://127.0.0.1:${proxyPort}/v1/accounts');print(json.dumps(json.loads(r.read()),indent=2,ensure_ascii=False))"` },
+                { label: '配额查询', cmd: `python -c "import urllib.request,json;r=urllib.request.urlopen('http://127.0.0.1:${proxyPort}/v1/quota');print(json.dumps(json.loads(r.read()),indent=2,ensure_ascii=False))"` },
+                { label: '使用统计', cmd: `python -c "import urllib.request,json;r=urllib.request.urlopen('http://127.0.0.1:${proxyPort}/v1/usage');print(json.dumps(json.loads(r.read()),indent=2,ensure_ascii=False))"` },
             ],
         },
         {
             label: '📡 API 测试',
             commands: [
-                { label: '健康检查', cmd: `curl -s http://127.0.0.1:${proxyPort}/health | python -m json.tool` },
-                { label: '模型列表', cmd: `curl -s http://127.0.0.1:${proxyPort}/v1/models | python -m json.tool` },
+                { label: '健康检查', cmd: `python -c "import urllib.request,json;r=urllib.request.urlopen('http://127.0.0.1:${proxyPort}/health');print(json.dumps(json.loads(r.read()),indent=2,ensure_ascii=False))"` },
+                { label: '模型列表', cmd: `python -c "import urllib.request,json;r=urllib.request.urlopen('http://127.0.0.1:${proxyPort}/v1/models');print(json.dumps(json.loads(r.read()),indent=2,ensure_ascii=False))"` },
                 {
                     label: 'Chat测试', cmd: isWindows
-                        ? `curl -s http://127.0.0.1:${proxyPort}/v1/chat/completions -H \"Content-Type: application/json\" -d \"{\\\"model\\\":\\\"gemini-3-flash\\\",\\\"messages\\\":[{\\\"role\\\":\\\"user\\\",\\\"content\\\":\\\"hi\\\"}],\\\"max_tokens\\\":10}\" | python -m json.tool`
-                        : `curl -s http://127.0.0.1:${proxyPort}/v1/chat/completions -H "Content-Type: application/json" -d "{\\\"model\\\":\\\"gemini-3-flash\\\",\\\"messages\\\":[{\\\"role\\\":\\\"user\\\",\\\"content\\\":\\\"hi\\\"}],\\\"max_tokens\\\":10}" | python -m json.tool`
+                        ? `python -c "import urllib.request,json;r=urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:${proxyPort}/v1/chat/completions',json.dumps({'model':'gemini-3-flash','messages':[{'role':'user','content':'hi'}],'max_tokens':10}).encode(),{'Content-Type':'application/json'}));print(json.dumps(json.loads(r.read()),indent=2,ensure_ascii=False))"`
+                        : `curl -s http://127.0.0.1:${proxyPort}/v1/chat/completions -H "Content-Type: application/json" -d '{"model":"gemini-3-flash","messages":[{"role":"user","content":"hi"}],"max_tokens":10}' | python -m json.tool`
                 },
+            ],
+        },
+        {
+            label: '🖼️ 图像生成',
+            commands: [
+                {
+                    label: 'Chat生图', cmd: `python -c "import urllib.request,json;r=urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:${proxyPort}/v1/chat/completions',json.dumps({'model':'gemini-3-pro-image','messages':[{'role':'user','content':'Draw a cute cyberpunk cat with neon lights'}],'max_tokens':4096}).encode(),{'Content-Type':'application/json'}));print(json.dumps(json.loads(r.read()),indent=2,ensure_ascii=False))"`
+                },
+                {
+                    label: 'Gemini原生', cmd: `python -c "import urllib.request,json;r=urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:${proxyPort}/v1beta/models/gemini-3-pro-image:generateContent',json.dumps({'contents':[{'parts':[{'text':'Generate an image: a futuristic city skyline at sunset'}]}],'generationConfig':{'responseModalities':['TEXT','IMAGE']}}).encode(),{'Content-Type':'application/json'}));print(json.dumps(json.loads(r.read()),indent=2,ensure_ascii=False))"`
+                },
+                {
+                    label: '像素龙', cmd: `python -c "import urllib.request,json;r=urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:${proxyPort}/v1/chat/completions',json.dumps({'model':'gemini-3-pro-image','messages':[{'role':'user','content':'Draw a pixel art dragon breathing fire'}],'max_tokens':4096}).encode(),{'Content-Type':'application/json'}));print(json.dumps(json.loads(r.read()),indent=2,ensure_ascii=False))"`
+                },
+                { label: '图片列表', cmd: 'docker exec zerogravity sh -c "find /tmp/.agcache/.gemini/antigravity/brain/ -name \'*.png\' -printf \'%T@ %p\\n\' | sort -rn | head -5"' },
             ],
         },
         {
@@ -140,13 +155,39 @@ function Logs() {
             commands: [
                 { label: '端口检测', cmd: isWindows ? `netstat -ano | findstr :${proxyPort}` : `lsof -i :${proxyPort}` },
                 { label: 'ZG版本', cmd: 'docker exec zerogravity cat /app/version.txt' },
-                { label: '网络测试', cmd: `curl -o nul -w \"HTTP: %{http_code} | Time: %{time_total}s\" http://127.0.0.1:${proxyPort}/health` },
+                { label: '网络测试', cmd: `python -c "import urllib.request,time;s=time.time();r=urllib.request.urlopen('http://127.0.0.1:${proxyPort}/health');print(f'HTTP: {r.status} | Time: {time.time()-s:.3f}s')"` },
                 { label: '磁盘占用', cmd: 'docker system df' },
             ],
         },
     ];
 
     const [activePresetCategory, setActivePresetCategory] = useState(0);
+
+    // Resizable Divider Logic
+    const [terminalHeight, setTerminalHeight] = useState(240);
+    const isResizing = useRef(false);
+
+    const startResizing = useCallback(() => {
+        isResizing.current = true;
+        document.addEventListener('mousemove', handleMouseMove);
+        document.addEventListener('mouseup', stopResizing);
+        document.body.style.cursor = 'row-resize';
+    }, []);
+
+    const stopResizing = useCallback(() => {
+        isResizing.current = false;
+        document.removeEventListener('mousemove', handleMouseMove);
+        document.removeEventListener('mouseup', stopResizing);
+        document.body.style.cursor = 'default';
+    }, []);
+
+    const handleMouseMove = useCallback((e: MouseEvent) => {
+        if (!isResizing.current) return;
+        const newHeight = window.innerHeight - e.clientY - 20; // Adjust for footer/padding
+        if (newHeight > 100 && newHeight < window.innerHeight * 0.7) {
+            setTerminalHeight(newHeight);
+        }
+    }, []);
 
     const colorizeLog = (line: string): string => {
         // Simple colorization via CSS classes
@@ -158,10 +199,10 @@ function Logs() {
     };
 
     return (
-        <div className="h-full flex flex-col p-3 gap-2">
+        <div className="h-full flex flex-col p-3 gap-0 overflow-hidden">
 
             {/* Docker Logs Section */}
-            <div className="flex-1 flex flex-col bg-base-100/80 rounded-lg border border-base-content/5 overflow-hidden min-h-0">
+            <div className="flex-1 flex flex-col bg-base-100/80 rounded-t-lg border border-base-content/5 overflow-hidden min-h-0">
                 {/* Log Header */}
                 <div className="flex items-center justify-between px-3 py-1.5 bg-base-content/3 border-b border-base-content/5 shrink-0">
                     <div className="flex items-center gap-2">
@@ -219,8 +260,19 @@ function Logs() {
                 </pre>
             </div>
 
+            {/* Resizable Divider */}
+            <div
+                onMouseDown={startResizing}
+                className="h-1.5 w-full bg-base-300 hover:bg-primary/40 cursor-row-resize flex items-center justify-center transition-colors group relative z-10"
+            >
+                <div className="w-12 h-0.5 rounded-full bg-base-content/20 group-hover:bg-primary transition-colors"></div>
+            </div>
+
             {/* Terminal Section */}
-            <div className="h-[200px] flex flex-col bg-[#0d1117] rounded-lg border border-base-content/5 overflow-hidden shrink-0">
+            <div
+                style={{ height: `${terminalHeight}px` }}
+                className="flex flex-col bg-[#0d1117] rounded-b-lg border border-base-content/5 overflow-hidden shrink-0"
+            >
                 {/* Terminal Header */}
                 <div className="flex flex-col bg-[#161b22] border-b border-white/5 shrink-0">
                     <div className="flex items-center justify-between px-3 py-1 border-b border-white/3">
