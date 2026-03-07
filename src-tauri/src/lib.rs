@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use tauri::{AppHandle, Manager};
 
 /// 默认的 proxy_fix.py 内容，编译时嵌入二进制
-const DEFAULT_PROXY_PY: &str = include_str!("../../../proxy_fix.py");
+const DEFAULT_PROXY_PY: &str = include_str!("../../proxy_fix.py");
 
 // ─── Tauri Commands ───
 
