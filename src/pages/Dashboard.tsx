@@ -1,4 +1,4 @@
-import { Play, Square, RefreshCcw, Cpu, Clock, Network, Globe, Heart, Settings2 } from 'lucide-react';
+import { Play, Square, RefreshCcw, Cpu, Clock, Network, Globe, Heart, Settings2, X, Save } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { showToast } from '../components/common/ToastContainer';
@@ -34,16 +34,27 @@ const API_ENDPOINTS = [
     { method: 'POST', path: '/v1/chat/completions', color: 'text-green-400 bg-green-500/10' },
     { method: 'POST', path: '/v1/responses', color: 'text-green-400 bg-green-500/10' },
     { method: 'POST', path: '/v1/messages', color: 'text-green-400 bg-green-500/10' },
+    { method: 'POST', path: '/v1/messages/count_tokens', color: 'text-green-400 bg-green-500/10' },
     { method: 'POST', path: '/v1beta/models/:model:generateContent', color: 'text-rose-400 bg-rose-500/10' },
+    { method: 'GET', path: '/v1beta/models', color: 'text-cyan-400 bg-cyan-500/10' },
+    { method: 'GET', path: '/v1beta/models/:model', color: 'text-cyan-400 bg-cyan-500/10' },
     { method: 'GET', path: '/v1/models', color: 'text-cyan-400 bg-cyan-500/10' },
     { method: 'GET/POST', path: '/v1/search', color: 'text-amber-400 bg-amber-500/10' },
     { method: 'POST', path: '/v1/token', color: 'text-green-400 bg-green-500/10' },
     { method: 'GET', path: '/v1/accounts', color: 'text-cyan-400 bg-cyan-500/10' },
     { method: 'POST', path: '/v1/accounts', color: 'text-green-400 bg-green-500/10' },
+    { method: 'POST', path: '/v1/accounts/set_active', color: 'text-green-400 bg-green-500/10' },
+    { method: 'DELETE', path: '/v1/accounts', color: 'text-red-400 bg-red-500/10' },
+    { method: 'GET', path: '/v1/accounts/status', color: 'text-cyan-400 bg-cyan-500/10' },
     { method: 'GET', path: '/v1/usage', color: 'text-cyan-400 bg-cyan-500/10' },
     { method: 'GET', path: '/v1/quota', color: 'text-cyan-400 bg-cyan-500/10' },
     { method: 'GET', path: '/v1/images/*', color: 'text-cyan-400 bg-cyan-500/10' },
+    { method: 'POST', path: '/v1/replay/raw', color: 'text-green-400 bg-green-500/10' },
+    { method: 'POST', path: '/v1/debug/simulate', color: 'text-green-400 bg-green-500/10' },
     { method: 'GET', path: '/health', color: 'text-cyan-400 bg-cyan-500/10' },
+    { method: 'GET/POST', path: '/', color: 'text-amber-400 bg-amber-500/10' },
+    { method: 'POST', path: '/api/event_logging/batch', color: 'text-green-400 bg-green-500/10' },
+    { method: 'GET/POST', path: '/.well-known/*', color: 'text-amber-400 bg-amber-500/10' },
 ];
 
 function Dashboard() {
@@ -58,6 +69,98 @@ function Dashboard() {
 
     const config = useConfigStore(state => state.config);
     const proxyPort = config?.proxy?.port || 8741;
+
+    // Customization Drawer
+    const [drawerOpen, setDrawerOpen] = useState(false);
+    const [settings, setSettings] = useState<Record<string, string>>({
+        ZEROGRAVITY_SYSTEM_MODE: 'native',
+        ZEROGRAVITY_H2_PROFILE: 'chromium',
+        ZEROGRAVITY_H2_COMPAT_MODE: 'parity',
+        ZEROGRAVITY_TLS_DEBUG_BACKEND: '0',
+        ZEROGRAVITY_TLS_DEBUG_MITM: '0',
+        ZEROGRAVITY_SENSITIVE_WORDS: '',
+        ZEROGRAVITY_MODEL_ALIASES: '',
+        ZEROGRAVITY_API_BODY_LIMIT_MB: '32',
+        ZEROGRAVITY_QUOTA_CAP: '0.2',
+        ZEROGRAVITY_UPSTREAM_PROXY: ''
+    });
+
+    const isWindows = typeof window !== 'undefined' && /win/i.test(navigator.userAgent);
+
+    const fetchCustomSettings = async () => {
+        try {
+            const res = await invoke<string>('run_shell_command', {
+                command: 'docker inspect zerogravity --format "{{json .Config.Env}}"'
+            });
+            const envs: string[] = JSON.parse(res);
+            const newSettings = { ...settings };
+            envs.forEach(env => {
+                const [k, ...v] = env.split('=');
+                if (k in newSettings) {
+                    newSettings[k] = v.join('=');
+                }
+            });
+            setSettings(newSettings);
+        } catch (e) { console.error('Failed to fetch docker envs', e); }
+    };
+
+    const saveCustomSettings = async () => {
+        setActionLoading(true);
+        try {
+            const pathRes = await invoke<string>('run_shell_command', {
+                command: 'docker inspect zerogravity --format "{{index .Config.Labels \\"com.docker.compose.project.config_files\\"}}"'
+            });
+            const composeFile = pathRes.trim();
+            if (!composeFile || composeFile.toLowerCase().indexOf('docker-compose.yml') === -1) {
+                throw new Error("Cannot find docker-compose.yml path");
+            }
+
+            const scriptStr = `
+import sys, re, json
+compose_file = r'''${composeFile}'''
+envs = json.loads(r'''${JSON.stringify(settings)}''')
+with open(compose_file, 'r', encoding='utf-8') as f:
+    text = f.read()
+
+text = re.sub(r'\\n\\s+# --- ZG PANEL INJECTED ---[\\s\\S]*?(?=\\n\\S|\\Z)', '', text)
+
+match = re.search(r'\\s+environment:', text)
+if match:
+    inject = "\\n      # --- ZG PANEL INJECTED ---\\n"
+    for k, v in envs.items():
+        if str(v).strip() != "":
+            inject += f"      - {k}={v}\\n"
+    text = text[:match.end()] + inject + text[match.end():]
+    with open(compose_file, 'w', encoding='utf-8') as f:
+        f.write(text)
+    print("Patch successful")
+else:
+    print("Error: Could not find environment: block", file=sys.stderr)
+    sys.exit(1)
+            `.trim().replace(/\r?\n/g, '\\n').replace(/"/g, '\\"');
+
+            const patchCommand = isWindows
+                ? `python -c "${scriptStr}"`
+                : `python3 -c "${scriptStr}"`;
+
+            await invoke('run_shell_command', { command: patchCommand });
+            showToast(t('common.update_success', "Settings updated in docker-compose"), 'success');
+            showToast(t('dashboard.control.restart', "Restarting service..."), 'info');
+
+            const dir = composeFile.substring(0, Math.max(composeFile.lastIndexOf('/'), composeFile.lastIndexOf('\\')));
+            const upCommand = isWindows ? `cmd /C "cd /d ${dir} && docker compose up -d"` : `cd "${dir}" && docker compose up -d`;
+            await invoke('run_shell_command', { command: upCommand });
+
+            showToast(t('dashboard.toast.docker_success', { action: 'restart' }), 'success');
+            setDrawerOpen(false);
+            setTimeout(() => { refreshAll(); }, 2000);
+
+        } catch (e) {
+            showToast(t('dashboard.toast.docker_error', { action: 'save settings', error: String(e) }), 'error');
+        } finally {
+            setActionLoading(false);
+        }
+    };
 
     // Docker containers & port
     const [containers, setContainers] = useState<{ id: string, name: string, image: string, portPairs: { host: string, container: string, proto: string }[] }[]>([]);
@@ -151,6 +254,7 @@ function Dashboard() {
         fetchModels();
         fetchQuota();
         fetchContainers();
+        fetchCustomSettings();
         getActiveEmail().then(setActiveEmail);
     };
 
@@ -162,6 +266,8 @@ function Dashboard() {
 
     const isRunning = dockerStatus.toLowerCase() === 'running';
     const isHealthy = health?.status === 'ok' || health?.status === 'healthy';
+
+    const updateSetting = (key: string, val: string) => setSettings(s => ({ ...s, [key]: val }));
 
     return (
         <div className="h-full w-full overflow-y-auto">
@@ -379,6 +485,14 @@ function Dashboard() {
                         <div className="flex items-center gap-2">
                             <Network className="w-4 h-4 text-base-content/40" />
                             <span className="text-xs font-bold text-base-content">{t('dashboard.control.title')}</span>
+                            <button
+                                onClick={() => setDrawerOpen(true)}
+                                className="ml-2 btn btn-xs btn-ghost gap-1.5 px-2 text-base-content/50 hover:text-primary transition-colors hover:bg-primary/10 h-6 min-h-0"
+                                title="Customization Settings"
+                            >
+                                <Settings2 className="w-3.5 h-3.5" />
+                                <span className="text-[9px] font-black tracking-tighter opacity-80 mt-0.5">VARS CONFIG</span>
+                            </button>
                         </div>
                         <div className="flex items-center gap-1.5">
                             <button
@@ -504,6 +618,112 @@ function Dashboard() {
                     )}
                 </div>
 
+            </div>
+            {/* ——— Left Customization Drawer ——— */}
+            {drawerOpen && (
+                <div
+                    className="fixed inset-0 bg-black/40 z-40 transition-opacity backdrop-blur-sm"
+                    onClick={() => setDrawerOpen(false)}
+                />
+            )}
+
+            <div className={`fixed top-0 left-0 h-full w-[380px] bg-base-100 border-r border-base-content/5 shadow-2xl z-50 transform transition-transform duration-300 ${drawerOpen ? 'translate-x-0' : '-translate-x-full'} flex flex-col`}>
+                <div className="flex items-center justify-between p-4 border-b border-base-content/5">
+                    <div className="flex items-center gap-2 text-primary">
+                        <Settings2 className="w-5 h-5" />
+                        <h2 className="text-base font-black">自定义设置 <span className="text-[10px] opacity-50 font-mono font-medium align-middle">Customization</span></h2>
+                    </div>
+                    <button onClick={() => setDrawerOpen(false)} className="btn btn-sm btn-ghost btn-circle text-base-content/50 hover:text-base-content">
+                        <X className="w-4 h-4" />
+                    </button>
+                </div>
+
+                <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                    <div className="space-y-1">
+                        <label className="text-[13px] font-bold text-base-content block">核心身份模式 <span className="text-[9px] text-base-content/40 font-mono font-normal">ZEROGRAVITY_SYSTEM_MODE</span></label>
+                        <select className="select select-sm select-bordered w-full text-xs font-mono" value={settings.ZEROGRAVITY_SYSTEM_MODE} onChange={e => updateSetting('ZEROGRAVITY_SYSTEM_MODE', e.target.value)}>
+                            <option value="native">Native (保留AG请求/保留身份)</option>
+                            <option value="stealth">Stealth (剥离AG身份/注入工具)</option>
+                            <option value="minimal">Minimal (替换完整20K提示词/省Token)</option>
+                        </select>
+                    </div>
+
+                    <div className="space-y-1">
+                        <label className="text-[13px] font-bold text-base-content block">伪装指纹策略 <span className="text-[9px] text-base-content/40 font-mono font-normal">ZEROGRAVITY_H2_PROFILE</span></label>
+                        <select className="select select-sm select-bordered w-full text-xs font-mono" value={settings.ZEROGRAVITY_H2_PROFILE} onChange={e => updateSetting('ZEROGRAVITY_H2_PROFILE', e.target.value)}>
+                            <option value="chromium">Chromium</option>
+                            <option value="go">Go Default</option>
+                        </select>
+                    </div>
+
+                    <div className="space-y-1">
+                        <label className="text-[13px] font-bold text-base-content block">兼容模式 <span className="text-[9px] text-base-content/40 font-mono font-normal">ZEROGRAVITY_H2_COMPAT_MODE</span></label>
+                        <select className="select select-sm select-bordered w-full text-xs font-mono" value={settings.ZEROGRAVITY_H2_COMPAT_MODE} onChange={e => updateSetting('ZEROGRAVITY_H2_COMPAT_MODE', e.target.value)}>
+                            <option value="parity">Parity</option>
+                            <option value="strict_passthrough">Strict Passthrough</option>
+                        </select>
+                    </div>
+
+                    <div className="form-control bg-base-content/5 rounded-lg p-2 border border-base-content/5">
+                        <label className="label cursor-pointer py-1">
+                            <div>
+                                <span className="label-text text-[13px] font-bold text-base-content block">后端 TLS 调试</span>
+                                <span className="text-[9px] text-base-content/40 font-mono block mt-0.5">ZEROGRAVITY_TLS_DEBUG_BACKEND</span>
+                            </div>
+                            <input type="checkbox" className="toggle toggle-sm toggle-primary" checked={settings.ZEROGRAVITY_TLS_DEBUG_BACKEND === '1'} onChange={e => updateSetting('ZEROGRAVITY_TLS_DEBUG_BACKEND', e.target.checked ? '1' : '0')} />
+                        </label>
+                    </div>
+
+                    <div className="form-control bg-base-content/5 rounded-lg p-2 border border-base-content/5">
+                        <label className="label cursor-pointer py-1">
+                            <div>
+                                <span className="label-text text-[13px] font-bold text-base-content block">拦截 TLS 调试</span>
+                                <span className="text-[9px] text-base-content/40 font-mono block mt-0.5">ZEROGRAVITY_TLS_DEBUG_MITM</span>
+                            </div>
+                            <input type="checkbox" className="toggle toggle-sm toggle-primary" checked={settings.ZEROGRAVITY_TLS_DEBUG_MITM === '1'} onChange={e => updateSetting('ZEROGRAVITY_TLS_DEBUG_MITM', e.target.checked ? '1' : '0')} />
+                        </label>
+                    </div>
+
+                    <div className="space-y-1">
+                        <label className="text-[13px] font-bold text-base-content block">敏感词混淆过滤 <span className="text-[9px] text-base-content/40 font-mono font-normal">ZEROGRAVITY_SENSITIVE_WORDS</span></label>
+                        <input type="text" className="input input-sm input-bordered w-full text-xs font-mono placeholder:text-base-content/20" value={settings.ZEROGRAVITY_SENSITIVE_WORDS} onChange={e => updateSetting('ZEROGRAVITY_SENSITIVE_WORDS', e.target.value)} placeholder="Cursor,Windsurf (空表示默认)" />
+                        <p className="text-[9px] text-base-content/40 leading-tight">用逗号分隔需要隐形字符混淆的客户端名称，防服务器日志正则匹配。填 none 禁用。</p>
+                    </div>
+
+                    <div className="space-y-1">
+                        <label className="text-[13px] font-bold text-base-content block">模型别名映射 <span className="text-[9px] text-base-content/40 font-mono font-normal">ZEROGRAVITY_MODEL_ALIASES</span></label>
+                        <input type="text" className="input input-sm input-bordered w-full text-xs font-mono placeholder:text-base-content/20" value={settings.ZEROGRAVITY_MODEL_ALIASES} onChange={e => updateSetting('ZEROGRAVITY_MODEL_ALIASES', e.target.value)} placeholder="gpt-4o:gemini-3-flash,gpt-4:opus-4.6" />
+                    </div>
+
+                    <div className="space-y-1">
+                        <label className="text-[13px] font-bold text-base-content block">最大请求体限制 (MB) <span className="text-[9px] text-base-content/40 font-mono font-normal">ZEROGRAVITY_API_BODY_LIMIT_MB</span></label>
+                        <input type="number" className="input input-sm input-bordered w-full text-xs font-mono" value={settings.ZEROGRAVITY_API_BODY_LIMIT_MB} onChange={e => updateSetting('ZEROGRAVITY_API_BODY_LIMIT_MB', e.target.value)} placeholder="32" min="1" max="100" />
+                    </div>
+
+                    <div className="space-y-1">
+                        <label className="text-[13px] font-bold text-base-content block">账号限额阈值 <span className="text-[9px] text-base-content/40 font-mono font-normal">ZEROGRAVITY_QUOTA_CAP</span></label>
+                        <input type="number" step="0.1" className="input input-sm input-bordered w-full text-xs font-mono" value={settings.ZEROGRAVITY_QUOTA_CAP} onChange={e => updateSetting('ZEROGRAVITY_QUOTA_CAP', e.target.value)} placeholder="0.2" min="0" max="1" />
+                        <p className="text-[9px] text-base-content/40 leading-tight">0.0–1.0 比例。达到限额自动切换账号。填 0 禁用。</p>
+                    </div>
+
+                    <div className="space-y-1">
+                        <label className="text-[13px] font-bold text-base-content block">上游代理地址 <span className="text-[9px] text-base-content/40 font-mono font-normal">ZEROGRAVITY_UPSTREAM_PROXY</span></label>
+                        <input type="text" className="input input-sm input-bordered w-full text-xs font-mono placeholder:text-base-content/20" value={settings.ZEROGRAVITY_UPSTREAM_PROXY} onChange={e => updateSetting('ZEROGRAVITY_UPSTREAM_PROXY', e.target.value)} placeholder="socks5://127.0.0.1:7890" />
+                    </div>
+                </div>
+
+                <div className="p-4 border-t border-base-content/5 bg-base-100/50">
+                    <button
+                        onClick={saveCustomSettings}
+                        disabled={actionLoading}
+                        className="btn btn-primary btn-sm w-full gap-2 relative overflow-hidden group"
+                    >
+                        {actionLoading ? <RefreshCcw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4 relative z-10" />}
+                        <span className="relative z-10 text-[13px]">保存应用并重启容器</span>
+                        <div className="absolute inset-0 bg-white/20 -translate-x-full group-hover:translate-x-0 transition-transform duration-300"></div>
+                    </button>
+                    <p className="text-center text-[9px] text-base-content/30 mt-2 font-mono">通过注入 docker-compose.yml 环境变量实现生效</p>
+                </div>
             </div>
         </div>
     );

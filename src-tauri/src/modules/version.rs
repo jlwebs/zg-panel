@@ -1,15 +1,17 @@
 use crate::modules::process;
-use std::fs;
 use std::path::PathBuf;
 
 /// Antigravity Version Info
 #[derive(Debug, Clone)]
 pub struct AntigravityVersion {
     pub short_version: String,
+    #[allow(dead_code)]
     pub bundle_version: String,
 }
 
+
 /// Extract semver from string
+#[allow(dead_code)]
 fn extract_semver(raw: &str) -> Option<String> {
     for token in raw.split(|c: char| c.is_whitespace() || c == ',' || c == ';') {
         let t = token.trim_matches(|c: char| c == '"' || c == '\'' || c == '(' || c == ')');

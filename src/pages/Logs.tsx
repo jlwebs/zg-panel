@@ -90,13 +90,15 @@ function Logs() {
         }
     };
 
-    // Preset commands organized by category
+    // Preset commands organized by category (Optimized for Windows & Linux)
+    const isWindows = typeof window !== 'undefined' && /win/i.test(navigator.userAgent);
+
     const presetCategories = [
         {
             label: '🐳 Docker',
             commands: [
-                { label: 'docker ps', cmd: 'docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"' },
-                { label: '容器资源', cmd: 'docker stats zerogravity --no-stream --format "CPU: {{.CPUPerc}} | MEM: {{.MemUsage}} | NET: {{.NetIO}}"' },
+                { label: 'docker ps', cmd: 'docker ps --format "Names: {{.Names}} | Status: {{.Status}} | Ports: {{.Ports}}"' },
+                { label: '容器资源', cmd: `docker stats zerogravity --no-stream --format "CPU: {{.CPUPerc}} | MEM: {{.MemUsage}} | NET: {{.NetIO}}"` },
                 { label: '重启容器', cmd: 'docker restart zerogravity && echo "✅ 已重启"' },
                 { label: '容器日志', cmd: 'docker logs --tail 30 zerogravity 2>&1' },
             ],
@@ -115,27 +117,31 @@ function Logs() {
         {
             label: '🔑 ZG 账号',
             commands: [
-                { label: '提取Cookie', cmd: 'docker exec zerogravity zg extract --browser chrome 2>&1 || echo "❌ extract失败,确保Chrome已登录Gemini"' },
-                { label: '账号列表', cmd: `curl -s http://localhost:${proxyPort}/v1/accounts | python3 -m json.tool 2>/dev/null || echo "API 不可用"` },
-                { label: '配额查询', cmd: `curl -s http://localhost:${proxyPort}/v1/quota | python3 -m json.tool 2>/dev/null || echo "API 不可用"` },
-                { label: '使用统计', cmd: `curl -s http://localhost:${proxyPort}/v1/usage | python3 -m json.tool 2>/dev/null || echo "API 不可用"` },
+                { label: '提取Cookie', cmd: 'docker exec zerogravity zg extract --browser chrome 2>&1' },
+                { label: '账号列表', cmd: `curl -s http://127.0.0.1:${proxyPort}/v1/accounts | python -m json.tool` },
+                { label: '配额查询', cmd: `curl -s http://127.0.0.1:${proxyPort}/v1/quota | python -m json.tool` },
+                { label: '使用统计', cmd: `curl -s http://127.0.0.1:${proxyPort}/v1/usage | python -m json.tool` },
             ],
         },
         {
             label: '📡 API 测试',
             commands: [
-                { label: '健康检查', cmd: `curl -s http://localhost:${proxyPort}/health | python3 -m json.tool` },
-                { label: '模型列表', cmd: `curl -s http://localhost:${proxyPort}/v1/models | python3 -m json.tool` },
-                { label: 'Chat测试', cmd: `curl -s http://localhost:${proxyPort}/v1/chat/completions -H "Content-Type: application/json" -d '{"model":"gemini-3-flash","messages":[{"role":"user","content":"hi"}],"max_tokens":10}' | python3 -m json.tool` },
+                { label: '健康检查', cmd: `curl -s http://127.0.0.1:${proxyPort}/health | python -m json.tool` },
+                { label: '模型列表', cmd: `curl -s http://127.0.0.1:${proxyPort}/v1/models | python -m json.tool` },
+                {
+                    label: 'Chat测试', cmd: isWindows
+                        ? `curl -s http://127.0.0.1:${proxyPort}/v1/chat/completions -H \"Content-Type: application/json\" -d \"{\\\"model\\\":\\\"gemini-3-flash\\\",\\\"messages\\\":[{\\\"role\\\":\\\"user\\\",\\\"content\\\":\\\"hi\\\"}],\\\"max_tokens\\\":10}\" | python -m json.tool`
+                        : `curl -s http://127.0.0.1:${proxyPort}/v1/chat/completions -H "Content-Type: application/json" -d "{\\\"model\\\":\\\"gemini-3-flash\\\",\\\"messages\\\":[{\\\"role\\\":\\\"user\\\",\\\"content\\\":\\\"hi\\\"}],\\\"max_tokens\\\":10}" | python -m json.tool`
+                },
             ],
         },
         {
             label: '🔧 诊断',
             commands: [
-                { label: '端口检测', cmd: `lsof -i :${proxyPort} 2>/dev/null || echo "端口 ${proxyPort} 未被占用"` },
-                { label: 'ZG版本', cmd: 'docker exec zerogravity cat /app/version.txt 2>/dev/null || echo "unknown"' },
-                { label: '网络测试', cmd: `curl -s -o /dev/null -w "HTTP: %{http_code} | Time: %{time_total}s" http://localhost:${proxyPort}/health` },
-                { label: '磁盘占用', cmd: 'docker system df --format "{{.Type}}: {{.Size}} (Active: {{.Active}})"' },
+                { label: '端口检测', cmd: isWindows ? `netstat -ano | findstr :${proxyPort}` : `lsof -i :${proxyPort}` },
+                { label: 'ZG版本', cmd: 'docker exec zerogravity cat /app/version.txt' },
+                { label: '网络测试', cmd: `curl -o nul -w \"HTTP: %{http_code} | Time: %{time_total}s\" http://127.0.0.1:${proxyPort}/health` },
+                { label: '磁盘占用', cmd: 'docker system df' },
             ],
         },
     ];

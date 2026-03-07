@@ -184,7 +184,7 @@ fn get_antigravity_pids() -> Vec<u32> {
 }
 
 /// Close Antigravity processes
-pub fn close_antigravity(timeout_secs: u64) -> Result<(), String> {
+pub fn close_antigravity(_timeout_secs: u64) -> Result<(), String> {
     logger::log_info("Closing Antigravity...");
 
     #[cfg(target_os = "windows")]
@@ -403,6 +403,7 @@ pub fn get_antigravity_executable_path() -> Option<std::path::PathBuf> {
     None
 }
 
+#[allow(dead_code)]
 pub fn get_user_data_dir_from_process() -> Option<std::path::PathBuf> {
     None
 }

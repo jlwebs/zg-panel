@@ -3,21 +3,42 @@ mod device;
 mod protobuf;
 mod modules;
 
-use std::process::Command;
 use std::path::PathBuf;
 use tauri::{AppHandle, Manager};
+use tokio::process::Command;
+
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+
+/// Windows 标志位：彻底隐藏控制台黑框
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 /// 默认的 proxy_fix.py 内容，编译时嵌入二进制
 const DEFAULT_PROXY_PY: &str = include_str!("../../proxy_fix.py");
 
+/// 助手函数：创建一个正确配置的异步 Command
+fn create_command(program: &str) -> Command {
+    let mut std_cmd = std::process::Command::new(program);
+    #[cfg(target_os = "windows")]
+    {
+        std_cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    Command::from(std_cmd)
+}
+
+
+
 // ─── Tauri Commands ───
 
+
 #[tauri::command]
-fn check_docker() -> Result<String, String> {
-    let output = Command::new("docker")
+async fn check_docker() -> Result<String, String> {
+    let output = create_command("docker")
         .args(["inspect", "-f", "{{.State.Status}}", "zerogravity"])
         .output()
-        .map_err(|e| e.to_string())?;
+        .await
+        .map_err(|e: std::io::Error| e.to_string())?;
 
     if !output.status.success() {
         return Ok("not_found".into());
@@ -28,7 +49,7 @@ fn check_docker() -> Result<String, String> {
 }
 
 #[tauri::command]
-fn docker_action(action: &str) -> Result<String, String> {
+async fn docker_action(action: &str) -> Result<String, String> {
     let args = match action {
         "start" => vec!["start", "zerogravity"],
         "stop" => vec!["stop", "zerogravity"],
@@ -36,10 +57,11 @@ fn docker_action(action: &str) -> Result<String, String> {
         _ => return Err("Invalid action".into()),
     };
 
-    let output = Command::new("docker")
+    let output = create_command("docker")
         .args(&args)
         .output()
-        .map_err(|e| e.to_string())?;
+        .await
+        .map_err(|e: std::io::Error| e.to_string())?;
 
     if output.status.success() {
         Ok("Success".into())
@@ -49,12 +71,13 @@ fn docker_action(action: &str) -> Result<String, String> {
 }
 
 #[tauri::command]
-fn docker_logs(tail: Option<u32>) -> Result<String, String> {
+async fn docker_logs(tail: Option<u32>) -> Result<String, String> {
     let tail_str = tail.unwrap_or(200).to_string();
-    let output = Command::new("docker")
+    let output = create_command("docker")
         .args(["logs", "--tail", &tail_str, "zerogravity"])
         .output()
-        .map_err(|e| e.to_string())?;
+        .await
+        .map_err(|e: std::io::Error| e.to_string())?;
 
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
@@ -70,35 +93,53 @@ fn docker_logs(tail: Option<u32>) -> Result<String, String> {
     Ok(combined)
 }
 
+
 #[tauri::command]
-fn run_shell_command(command: &str) -> Result<String, String> {
-    let (prog, arg) = if cfg!(target_os = "windows") {
-        ("powershell", "-Command")
-    } else {
-        ("sh", "-c")
-    };
+async fn run_shell_command(command: &str) -> Result<String, String> {
+    if cfg!(target_os = "windows") {
+        // 自动处理 python/python3 差异
+        let cmd = command.replace("python ", "python ").replace("python3 ", "python ");
+        
+        // 使用 chcp 65001 强制 UTF-8，防止乱码干扰
+        let final_command = format!("chcp 65001 >nul && {}", cmd);
+        
+        let output = create_command("cmd")
+            .arg("/C")
+            .raw_arg(&final_command)
+            .output()
+            .await
+            .map_err(|e| format!("Failed to spawn cmd: {}", e))?;
 
+        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
 
-    println!("Executing command: {} {} {}", prog, arg, command);
-
-    let output = std::process::Command::new(prog)
-        .args([arg, command])
-        .output()
-        .map_err(|e| format!("Failed to spawn process: {}", e))?;
-
-    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-
-    if output.status.success() {
-        Ok(stdout)
-    } else {
-        let err_msg = if stderr.is_empty() {
-            format!("Command failed with exit code: {}. (No stderr output)", output.status)
+        if output.status.success() {
+            Ok(stdout)
         } else {
-            stderr
-        };
-        println!("Command error: {}", err_msg);
-        Err(err_msg)
+            // 即使失败也返回内容，方便调试
+            let combined = format!("{}{}", stdout, stderr).trim().to_string();
+            if combined.is_empty() {
+                Err(format!("Command failed with code: {}", output.status))
+            } else {
+                Err(combined)
+            }
+        }
+    } else {
+        let output = create_command("sh")
+            .arg("-c")
+            .arg(command)
+            .output()
+            .await
+            .map_err(|e| format!("Failed to spawn sh: {}", e))?;
+
+        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+
+        if output.status.success() {
+            Ok(stdout)
+        } else {
+            Err(format!("{}{}", stdout, stderr).trim().to_string())
+        }
     }
 }
 
@@ -151,11 +192,12 @@ fn init_proxy_files(app: AppHandle) -> Result<String, String> {
 }
 
 #[tauri::command]
-fn docker_inspect() -> Result<String, String> {
-    let output = Command::new("docker")
+async fn docker_inspect() -> Result<String, String> {
+    let output = create_command("docker")
         .args(["inspect", "zerogravity"])
         .output()
-        .map_err(|e| e.to_string())?;
+        .await
+        .map_err(|e: std::io::Error| e.to_string())?;
 
     if !output.status.success() {
         return Err("Container not found".into());
@@ -233,10 +275,11 @@ fn api_delete(path: &str, body_json: Option<String>, port: Option<u16>) -> Resul
 }
 
 #[tauri::command]
-fn load_accounts() -> Result<String, String> {
-    let output = Command::new("docker")
+async fn load_accounts() -> Result<String, String> {
+    let output = create_command("docker")
         .args(["exec", "zerogravity", "cat", "/root/.config/zerogravity/accounts.json"])
         .output()
+        .await
         .map_err(|e| e.to_string())?;
 
     if output.status.success() {
@@ -246,7 +289,9 @@ fn load_accounts() -> Result<String, String> {
         let path = std::path::PathBuf::from(&home)
             .join("Desktop/project/zerogravity_new/accounts.json");
         if path.exists() {
-            std::fs::read_to_string(&path).map_err(|e| e.to_string())
+            tokio::fs::read_to_string(&path)
+                .await
+                .map_err(|e: std::io::Error| e.to_string())
         } else {
             Ok("{\"accounts\":[],\"active\":\"\"}".to_string())
         }
@@ -254,14 +299,17 @@ fn load_accounts() -> Result<String, String> {
 }
 
 #[tauri::command]
-fn save_accounts(json_data: &str) -> Result<String, String> {
+async fn save_accounts(json_data: &str) -> Result<String, String> {
     let path = std::path::PathBuf::from("../accounts.json");
-    std::fs::write(&path, json_data).map_err(|e| e.to_string())?;
+    tokio::fs::write(&path, json_data)
+        .await
+        .map_err(|e: std::io::Error| e.to_string())?;
     
-    let output = Command::new("docker")
+    let output = create_command("docker")
         .args(["restart", "zerogravity"])
         .output()
-        .map_err(|e| e.to_string())?;
+        .await
+        .map_err(|e: std::io::Error| e.to_string())?;
         
     if output.status.success() {
         Ok("Success".to_string())
