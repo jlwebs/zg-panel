@@ -209,7 +209,7 @@ async fn docker_inspect() -> Result<String, String> {
 #[tauri::command]
 fn api_get(path: &str, port: Option<u16>) -> Result<String, String> {
     let p = port.unwrap_or(8741);
-    let url = format!("http://localhost:{}{}", p, path);
+    let url = format!("http://127.0.0.1:{}{}", p, path);
     
     let client = reqwest::blocking::Client::builder()
         .no_proxy()
@@ -230,7 +230,7 @@ fn api_get(path: &str, port: Option<u16>) -> Result<String, String> {
 #[tauri::command]
 fn api_post(path: &str, body_json: &str, port: Option<u16>) -> Result<String, String> {
     let p = port.unwrap_or(8741);
-    let url = format!("http://localhost:{}{}", p, path);
+    let url = format!("http://127.0.0.1:{}{}", p, path);
     let client = reqwest::blocking::Client::builder()
         .no_proxy()
         .build()
@@ -253,7 +253,8 @@ fn api_post(path: &str, body_json: &str, port: Option<u16>) -> Result<String, St
 #[tauri::command]
 fn api_delete(path: &str, body_json: Option<String>, port: Option<u16>) -> Result<String, String> {
     let p = port.unwrap_or(8741);
-    let url = format!("http://localhost:{}{}", p, path);
+    let url = format!("http://127.0.0.1:{}{}", p, path);
+
     let client = reqwest::blocking::Client::builder()
         .no_proxy()
         .build()

@@ -30,3 +30,4 @@ draw_*.py
 fix.py
 test_*
 *.log
+.ace-tool/

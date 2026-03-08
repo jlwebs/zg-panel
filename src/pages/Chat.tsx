@@ -59,7 +59,8 @@ function Chat() {
 
     const config = useConfigStore(state => state.config);
     const proxyPort = config?.proxy?.port || 8741;
-    const apiBase = `http://localhost:${proxyPort}`;
+    const apiBase = `http://127.0.0.1:${proxyPort}`;
+
 
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLTextAreaElement>(null);
