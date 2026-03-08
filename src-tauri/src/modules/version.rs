@@ -72,7 +72,7 @@ fn get_version_macos(exe_path: &PathBuf) -> Result<AntigravityVersion, String> {
         return Err(format!("Info.plist not found: {:?}", info_plist_path));
     }
     
-    let content = fs::read(&info_plist_path)
+    let content = std::fs::read(&info_plist_path)
         .map_err(|e| format!("Failed to read Info.plist: {}", e))?;
     
     let plist: Value = plist::from_bytes(&content)

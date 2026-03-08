@@ -19,6 +19,7 @@ const DEFAULT_PROXY_PY: &str = include_str!("../../proxy_fix.py");
 
 /// 助手函数：创建一个正确配置的异步 Command
 fn create_command(program: &str) -> Command {
+    #[allow(unused_mut)]
     let mut std_cmd = std::process::Command::new(program);
     #[cfg(target_os = "windows")]
     {
@@ -96,16 +97,20 @@ async fn docker_logs(tail: Option<u32>) -> Result<String, String> {
 
 #[tauri::command]
 async fn run_shell_command(command: &str) -> Result<String, String> {
-    if cfg!(target_os = "windows") {
+    #[cfg(target_os = "windows")]
+    {
         // 自动处理 python/python3 差异
         let cmd = command.replace("python ", "python ").replace("python3 ", "python ");
         
         // 使用 chcp 65001 强制 UTF-8，防止乱码干扰
         let final_command = format!("chcp 65001 >nul && {}", cmd);
         
-        let output = create_command("cmd")
-            .arg("/C")
-            .raw_arg(&final_command)
+        let mut std_cmd = std::process::Command::new("cmd");
+        std_cmd.creation_flags(CREATE_NO_WINDOW);
+        std_cmd.arg("/C");
+        std_cmd.raw_arg(&final_command);
+        
+        let output = tokio::process::Command::from(std_cmd)
             .output()
             .await
             .map_err(|e| format!("Failed to spawn cmd: {}", e))?;
@@ -124,7 +129,10 @@ async fn run_shell_command(command: &str) -> Result<String, String> {
                 Err(combined)
             }
         }
-    } else {
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
         let output = create_command("sh")
             .arg("-c")
             .arg(command)
